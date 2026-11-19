@@ -1,0 +1,105 @@
+# Croisette — fabrique l'application PC (.exe / .dmg) et publie la version téléphone.
+# Se lance tout seul à chaque envoi sur la branche main, ou à la main depuis l'onglet « Actions ».
+name: Croisette
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: croisette
+  cancel-in-progress: true
+
+jobs:
+  telephone:
+    name: Version téléphone (GitHub Pages)
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  windows:
+    name: Application Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Préparer l'application
+        shell: bash
+        run: |
+          mkdir -p desktop/app
+          cp -r web/* desktop/app/
+          echo "{\"updateUrl\":\"https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/\"}" > desktop/app/config.json
+      - name: Installer
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Fabriquer Croisette-Setup.exe
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --win nsis --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Croisette-Windows
+          path: desktop/dist/*.exe
+
+  mac:
+    name: Application Mac
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Préparer l'application
+        run: |
+          mkdir -p desktop/app
+          cp -r web/* desktop/app/
+          echo "{\"updateUrl\":\"https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/\"}" > desktop/app/config.json
+      - name: Installer
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Fabriquer Croisette.dmg
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --mac dmg --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Croisette-Mac
+          path: desktop/dist/*.dmg
+
+  publication:
+    name: Page de téléchargement
+    needs: [windows, mac]
+    if: ${{ !cancelled() && needs.windows.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: sortie
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Croisette (version ${{ github.run_number }})
+          body: |
+            Télécharge **Croisette-Setup.exe** (Windows) ou **Croisette.dmg** (Mac) ci-dessous.
+            L'application s'ouvre avec ton identifiant et ton mot de passe.
+          files: sortie/**/*

@@ -1,0 +1,36 @@
+{
+  "name": "croisette",
+  "productName": "Croisette",
+  "version": "1.0.0",
+  "description": "Croisette — studio de montage",
+  "main": "main.js",
+  "author": "Croisette",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis --publish never",
+    "dist:mac": "electron-builder --mac dmg --publish never"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "fr.croisette.studio",
+    "productName": "Croisette",
+    "copyright": "Croisette",
+    "files": ["main.js", "preload.js", "app/**/*"],
+    "directories": { "buildResources": "build", "output": "dist" },
+    "win": { "target": "nsis", "icon": "build/icon.png" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Croisette",
+      "artifactName": "Croisette-Setup.${ext}"
+    },
+    "mac": { "target": "dmg", "icon": "build/icon.png", "category": "public.app-category.productivity", "artifactName": "Croisette.${ext}" }
+  }
+}

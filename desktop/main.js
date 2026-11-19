@@ -34,7 +34,7 @@ function startServer() {
       const p = pendingOAuth.get(st);
       if (p) { pendingOAuth.delete(st); code ? p.res(code) : p.rej(new Error(err || 'Connexion refusée')); }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(`<!DOCTYPE html><meta charset="utf-8"><title>Croisette</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#05070d;color:#F4F2EE;font:16px system-ui"><div style="text-align:center"><div style="font:italic 44px Georgia,serif">Croisette</div><p>${code ? 'Connexion Google réussie. Tu peux fermer cet onglet et revenir dans Croisette.' : 'Connexion annulée.'}</p></div></body>`);
+      res.end(`<!DOCTYPE html><meta charset="utf-8"><title>Croisette</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0E0D0C;color:#F4F2EE;font:16px system-ui"><div style="text-align:center"><div style="font:500 40px/1.1 system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:-.02em"><span style="display:inline-block;width:2px;height:28px;background:#E8603C;margin-right:12px;vertical-align:-2px"></span>Croisette</div><p>${code ? 'Connexion Google réussie. Tu peux fermer cet onglet et revenir dans Croisette.' : 'Connexion annulée.'}</p></div></body>`);
       if (win) win.focus();
       return;
     }
@@ -86,8 +86,19 @@ function createWindow() {
   win.webContents.session.setSpellCheckerLanguages(['fr']);
 }
 
+// Après une réinstallation, la version livrée avec l'app peut être plus récente que celle téléchargée
+function dropStaleUpdate() {
+  try {
+    const up = path.join(UPDATED(), 'index.html'), bu = path.join(BUNDLED, 'index.html');
+    if (!fs.existsSync(up) || !fs.existsSync(bu)) return;
+    const stamp = f => { const m = fs.readFileSync(f, 'utf8').match(/"build":"([0-9a-z]+)"/); return m ? parseInt(m[1], 36) : 0; };
+    if (stamp(bu) >= stamp(up)) fs.unlinkSync(up);
+  } catch (e) {}
+}
+
 app.whenReady().then(async () => {
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
+  dropStaleUpdate();
   // L'aperçu du site (onglet Mon site) : autorise l'affichage dans un cadre
   session.defaultSession.webRequest.onHeadersReceived((d, cb) => {
     if (d.resourceType !== 'subFrame') return cb({});
@@ -143,6 +154,81 @@ ipcMain.handle('shell:open', (_e, url) => { if (/^(https?:|mailto:)/.test(url)) 
 ipcMain.handle('ui:mode', (_e, mode) => {
   if (!win || process.platform === 'darwin') return;
   try { win.setTitleBarOverlay({ color: '#00000000', symbolColor: mode === 'day' ? '#101826' : '#F4F2EE', height: 44 }); } catch (e) {}
+});
+
+// Boîte mail pro (IONOS ou tout serveur IMAP/SMTP) : lecture en IMAP, envoi en SMTP, copie dans « Envoyés »
+const mailErr = e => {
+  if (e && (e.authenticationFailed || /auth|login|credentials|535|password/i.test(String(e.responseText || e.response || e.message)))) return 'Adresse ou mot de passe refusé par le serveur mail. Utilise le mot de passe de la boîte mail (pas celui du compte IONOS).';
+  if (e && /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT/.test(String(e.code || e.message))) return 'Serveur mail injoignable. Vérifie ta connexion et le nom du serveur.';
+  return (e && (e.responseText || e.message)) || 'Erreur du serveur mail';
+};
+const addrText = list => (list || []).map(a => a.name ? `${a.name} <${a.address}>` : a.address).join(', ');
+async function withImap(cfg, fn) {
+  const { ImapFlow } = require('imapflow');
+  const c = new ImapFlow({ host: cfg.imapHost || 'imap.ionos.fr', port: +cfg.imapPort || 993, secure: true, auth: { user: cfg.user, pass: cfg.pass }, logger: false, connectionTimeout: 20000, greetingTimeout: 15000 });
+  await c.connect();
+  try { return await fn(c); } finally { try { await c.logout(); } catch (e) { try { c.close(); } catch (e2) {} } }
+}
+async function sentFolder(c) {
+  const boxes = await c.list();
+  const b = boxes.find(x => x.specialUse === '\\Sent') || boxes.find(x => /^(sent|envoy|gesendet|éléments envoyés|elements envoyes)/i.test(x.name));
+  return b ? b.path : null;
+}
+const IONOS = {
+  async test(cfg) { await withImap(cfg, async () => true); return { ok: true }; },
+  async list(cfg, { q = '', unread = false, from = [], limit = 30 } = {}) {
+    return withImap(cfg, async c => {
+      const lock = await c.getMailboxLock('INBOX');
+      try {
+        const crit = {};
+        if (unread) crit.seen = false;
+        const ors = [];
+        if (q) ors.push({ from: q }, { subject: q }, { to: q });
+        for (const f of from) ors.push({ from: f });
+        if (ors.length === 1) Object.assign(crit, ors[0]); else if (ors.length) crit.or = ors;
+        const uids = (await c.search(Object.keys(crit).length ? crit : { all: true }, { uid: true })) || [];
+        const pick = uids.slice(-limit);
+        const items = [];
+        if (pick.length) for await (const m of c.fetch(pick, { uid: true, envelope: true, flags: true, internalDate: true }, { uid: true })) {
+          const env = m.envelope || {};
+          items.push({ id: String(m.uid), from: addrText(env.from), to: addrText(env.to), subject: env.subject || '(sans objet)', date: +(m.internalDate || env.date || Date.now()), snippet: '', unread: !(m.flags && m.flags.has('\\Seen')) });
+        }
+        items.sort((a, b) => b.date - a.date);
+        const unseen = (await c.search({ seen: false }, { uid: true })) || [];
+        return { items, unread: unseen.length };
+      } finally { lock.release(); }
+    });
+  },
+  async read(cfg, id) {
+    return withImap(cfg, async c => {
+      const lock = await c.getMailboxLock('INBOX');
+      try {
+        const m = await c.fetchOne(String(id), { uid: true, source: true }, { uid: true });
+        if (!m || !m.source) throw new Error('Mail introuvable');
+        try { await c.messageFlagsAdd(String(id), ['\\Seen'], { uid: true }); } catch (e) {}
+        const { simpleParser } = require('mailparser');
+        const p = await simpleParser(m.source);
+        return { id: String(id), from: p.from ? p.from.text : '', to: p.to ? p.to.text : '', subject: p.subject || '', date: p.date ? +p.date : Date.now(), msgId: p.messageId || '', html: p.html || '', text: p.text || '' };
+      } finally { lock.release(); }
+    });
+  },
+  async send(cfg, msg) {
+    const nodemailer = require('nodemailer');
+    const MailComposer = require('nodemailer/lib/mail-composer');
+    const opts = { from: msg.from || cfg.user, to: msg.to, subject: msg.subject, text: msg.text, date: new Date(),
+      attachments: (msg.attachments || []).map(a => ({ filename: a.name, content: Buffer.from(a.base64, 'base64'), contentType: a.type })) };
+    if (msg.inReplyTo) { opts.inReplyTo = msg.inReplyTo; opts.references = msg.inReplyTo; }
+    const raw = await new MailComposer(opts).compile().build();
+    const port = +cfg.smtpPort || 465;
+    const t = nodemailer.createTransport({ host: cfg.smtpHost || 'smtp.ionos.fr', port, secure: port === 465, auth: { user: cfg.user, pass: cfg.pass }, connectionTimeout: 20000 });
+    await t.sendMail({ envelope: { from: cfg.user, to: msg.to }, raw });
+    try { await withImap(cfg, async c => { const box = await sentFolder(c); if (box) await c.append(box, raw, ['\\Seen']); }); } catch (e) { /* copie facultative */ }
+    return { ok: true };
+  }
+};
+ipcMain.handle('ionos', async (_e, action, cfg, arg) => {
+  if (!IONOS[action] || !cfg || !cfg.user || !cfg.pass) return { error: 'Boîte mail pro non configurée' };
+  try { return await IONOS[action](cfg, arg); } catch (e) { return { error: mailErr(e) }; }
 });
 
 // Connexion Google « application installée » : navigateur du système + code PKCE + jeton de rafraîchissement

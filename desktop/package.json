@@ -1,7 +1,7 @@
 {
   "name": "croisette",
   "productName": "Croisette",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Croisette — studio de montage",
   "main": "main.js",
   "author": "Croisette",
@@ -20,9 +20,19 @@
     "appId": "fr.croisette.studio",
     "productName": "Croisette",
     "copyright": "Croisette",
-    "files": ["main.js", "preload.js", "app/**/*"],
-    "directories": { "buildResources": "build", "output": "dist" },
-    "win": { "target": "nsis", "icon": "build/icon.png" },
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**/*"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
@@ -31,6 +41,16 @@
       "shortcutName": "Croisette",
       "artifactName": "Croisette-Setup.${ext}"
     },
-    "mac": { "target": "dmg", "icon": "build/icon.png", "category": "public.app-category.productivity", "artifactName": "Croisette.${ext}" }
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "artifactName": "Croisette.${ext}"
+    }
+  },
+  "dependencies": {
+    "imapflow": "^1.0.150",
+    "mailparser": "^3.6.0",
+    "nodemailer": "^6.9.0"
   }
 }

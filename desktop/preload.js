@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('croisetteNative', {
   openExternal: url => ipcRenderer.invoke('shell:open', url),
   googleAuth: o => ipcRenderer.invoke('google:auth', o),
   setMode: m => ipcRenderer.invoke('ui:mode', m),
-  takeSetup: () => ipcRenderer.invoke('setup:take')
+  takeSetup: () => ipcRenderer.invoke('setup:take'),
+  ionos: (action, cfg, arg) => ipcRenderer.invoke('ionos', action, cfg, arg)
 });

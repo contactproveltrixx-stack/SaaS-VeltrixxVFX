@@ -63,7 +63,7 @@ function startServer() {
       const p = pendingOAuth.get(st);
       if (p) { pendingOAuth.delete(st); code ? p.res(code) : p.rej(new Error(err || 'Connexion refusée')); }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(`<!DOCTYPE html><meta charset="utf-8"><title>SaaS Veltrixx</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0A0A0A;color:#EDEDED;font:16px system-ui"><div style="text-align:center"><div style="font:500 40px/1.1 system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:-.02em"><span style="display:inline-block;width:2px;height:28px;background:#2F7BFF;margin-right:12px;vertical-align:-2px"></span>SaaS Veltrixx</div><p>${code ? 'Connexion Google réussie. Tu peux fermer cet onglet et revenir dans Croisette.' : 'Connexion annulée.'}</p></div></body>`);
+      res.end(`<!DOCTYPE html><meta charset="utf-8"><title>SaaS Veltrixx</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0A0A0A;color:#EDEDED;font:16px system-ui"><div style="text-align:center"><div style="font:500 40px/1.1 system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:-.02em"><span style="display:inline-block;width:2px;height:28px;background:#2F7BFF;margin-right:12px;vertical-align:-2px"></span>SaaS Veltrixx</div><p>${code ? 'Connexion Google réussie. Tu peux fermer cet onglet et revenir dans SaaS Veltrixx.' : 'Connexion annulée.'}</p></div></body>`);
       if (win) win.focus();
       return;
     }
@@ -78,6 +78,8 @@ function startServer() {
   });
 }
 
+function buildStamp(html) { const m = String(html).match(/"build":"([0-9a-z]+)"/); return m ? parseInt(m[1], 36) : 0; }
+
 // Mise à jour de l'interface depuis la version en ligne (GitHub Pages), si configurée
 async function checkUpdate() {
   const { updateUrl } = readConfig();
@@ -89,8 +91,10 @@ async function checkUpdate() {
     if (!html.includes('id="vault"')) return;
     const dir = UPDATED(); fs.mkdirSync(dir, { recursive: true });
     const cur = resolveFile('index.html');
-    if (cur && fs.readFileSync(cur, 'utf8') === html) return false;
-    fs.writeFileSync(path.join(dir, 'index.html'), html);
+    // Jamais de retour en arrière : la version en ligne doit être plus récente que celle déjà présente
+    if (cur && buildStamp(html) <= buildStamp(fs.readFileSync(cur, 'utf8'))) return false;
+    const tmp = path.join(dir, 'index.html.part');
+    fs.writeFileSync(tmp, html); fs.renameSync(tmp, path.join(dir, 'index.html'));
     return true;
   } catch (e) { /* hors ligne */ return null; }
 }
@@ -133,7 +137,7 @@ function dropStaleUpdate() {
   try {
     const up = path.join(UPDATED(), 'index.html'), bu = path.join(BUNDLED, 'index.html');
     if (!fs.existsSync(up) || !fs.existsSync(bu)) return;
-    const stamp = f => { const m = fs.readFileSync(f, 'utf8').match(/"build":"([0-9a-z]+)"/); return m ? parseInt(m[1], 36) : 0; };
+    const stamp = f => buildStamp(fs.readFileSync(f, 'utf8'));
     if (stamp(bu) >= stamp(up)) fs.unlinkSync(up);
   } catch (e) {}
 }

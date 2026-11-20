@@ -10,6 +10,12 @@ contextBridge.exposeInMainWorld('croisetteNative', {
   setMode: m => ipcRenderer.invoke('ui:mode', m),
   takeSetup: () => ipcRenderer.invoke('setup:take'),
   ionos: (action, cfg, arg) => ipcRenderer.invoke('ionos', action, cfg, arg),
+  bank: {
+    port: () => ipcRenderer.invoke('bank:port'),
+    auth: (url, state) => ipcRenderer.invoke('bank:auth', url, state),
+    code: (state, code) => ipcRenderer.invoke('bank:code', state, code),
+    cancel: () => ipcRenderer.invoke('bank:cancel')
+  },
   app: {
     get: () => ipcRenderer.invoke('app:get'),
     set: patch => ipcRenderer.invoke('app:set', patch),

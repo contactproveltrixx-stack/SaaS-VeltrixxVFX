@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>SaaS Veltrixx · banque</title>
+<link rel="icon" href="icons/favicon-64.png" type="image/png">
+<style>
+  html,body{margin:0;height:100%;background:#0A0A0A;color:#EDEDED;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{min-height:100%;display:grid;place-items:center;padding:24px;box-sizing:border-box}
+  .box{max-width:440px;text-align:center}
+  svg{width:34px;height:37px;color:#EDEDED}
+  h1{font-size:22px;font-weight:600;letter-spacing:-.01em;margin:14px 0 6px}
+  p{color:#A3A3A3;margin:0 0 14px}
+  code{display:block;word-break:break-all;background:#161616;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px;color:#EDEDED;font:12.5px ui-monospace,Consolas,monospace;margin:0 0 12px}
+  button,a.btn{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 16px;border-radius:10px;border:0;background:#2F7BFF;color:#fff;font:inherit;font-weight:500;cursor:pointer;text-decoration:none}
+  .err{color:#E5484D}
+</style>
+</head>
+<body>
+<main><div class="box" id="box">
+  <svg viewBox="281 262 462 500" aria-hidden="true"><path d="M281 262H411L512 557L613 262H743L572 762H452Z" fill="currentColor"/></svg>
+  <h1>Retour dans SaaS Veltrixx…</h1>
+  <p>Un instant, la connexion de ton compte se termine dans l’app PC.</p>
+</div></main>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), st = q.get('state') || '', code = q.get('code'), err = q.get('error_description') || q.get('error');
+  var port = (st.match(/^(\d{2,5})\./) || [])[1];
+  var box = document.getElementById('box');
+  function show(h) { box.innerHTML = box.querySelector('svg').outerHTML + h; }
+  if (err && !code) { show('<h1>Connexion annulée</h1><p class="err">' + String(err).replace(/[<>&]/g, '') + '</p><p>Tu peux fermer cet onglet et réessayer depuis SaaS Veltrixx.</p>'); return; }
+  if (!code) { show('<h1>Rien à faire ici</h1><p>Cette page sert au retour des connexions bancaires de SaaS Veltrixx.</p>'); return; }
+  if (port) setTimeout(function () { location.replace('http://localhost:' + port + '/banque' + location.search); }, 300);
+  setTimeout(function () {
+    show('<h1>L’app PC ne répond pas ?</h1><p>Vérifie que SaaS Veltrixx est ouvert sur ton PC. Sinon, copie ce lien et colle-le dans la fenêtre de connexion de l’app.</p><code id="lnk"></code><button id="cp">Copier le lien</button>');
+    document.getElementById('lnk').textContent = location.href;
+    document.getElementById('cp').onclick = function () { navigator.clipboard.writeText(location.href).then(function () { document.getElementById('cp').textContent = 'Copié'; }); };
+  }, port ? 6000 : 0);
+})();
+</script>
+</body>
+</html>

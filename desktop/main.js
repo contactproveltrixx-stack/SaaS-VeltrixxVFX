@@ -40,6 +40,7 @@ function validBounds(b) {
   return screen.getAllDisplays().some(d => { const a = d.workArea; return b.x < a.x + a.width - 80 && b.x + b.width > a.x + 80 && b.y >= a.y - 10 && b.y < a.y + a.height - 80; }) ? b : null;
 }
 const pendingOAuth = new Map();
+const pendingBank = new Map();
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on('second-instance', () => showWin());
@@ -65,6 +66,15 @@ function startServer() {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`<!DOCTYPE html><meta charset="utf-8"><title>SaaS Veltrixx</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0A0A0A;color:#EDEDED;font:16px system-ui"><div style="text-align:center"><div style="font:500 40px/1.1 system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:-.02em"><span style="display:inline-block;width:2px;height:28px;background:#2F7BFF;margin-right:12px;vertical-align:-2px"></span>SaaS Veltrixx</div><p>${code ? 'Connexion Google réussie. Tu peux fermer cet onglet et revenir dans SaaS Veltrixx.' : 'Connexion annulée.'}</p></div></body>`);
       if (win) win.focus();
+      return;
+    }
+    if (u.pathname === '/banque') {
+      const st = u.searchParams.get('state'), code = u.searchParams.get('code'), err = u.searchParams.get('error_description') || u.searchParams.get('error');
+      const p = pendingBank.get(st);
+      if (p) { pendingBank.delete(st); code ? p.res(code) : p.rej(new Error(err || 'Connexion annulée')); }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<!DOCTYPE html><meta charset="utf-8"><title>SaaS Veltrixx</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0A0A0A;color:#EDEDED;font:16px system-ui"><div style="text-align:center;max-width:420px;padding:24px"><div style="font:600 30px system-ui;letter-spacing:-.02em">SaaS Veltrixx</div><p>${code && p ? 'Compte relié. Tu peux fermer cet onglet et revenir dans SaaS Veltrixx.' : code ? 'Ce lien a déjà servi ou a expiré : relance la connexion depuis SaaS Veltrixx.' : 'Connexion annulée.'}</p></div></body>`);
+      if (win && p) showWin();
       return;
     }
     const fp = resolveFile(u.pathname === '/' ? 'index.html' : decodeURIComponent(u.pathname));
@@ -302,6 +312,18 @@ ipcMain.handle('google:auth', async (_e, { clientId, clientSecret, scope }) => {
   if (win) win.focus();
   return j;
 });
+
+/* ---------- Banques (Enable Banking) : la page de la banque s'ouvre dans le navigateur, le retour arrive sur /banque ---------- */
+ipcMain.handle('bank:port', () => port);
+ipcMain.handle('bank:auth', (_e, url, state) => new Promise((res, rej) => {
+  if (!/^https:\/\//.test(url) || !state) return rej(new Error('Lien de connexion invalide'));
+  for (const [k, p] of pendingBank) { p.rej(new Error('Connexion remplacée')); pendingBank.delete(k); }
+  pendingBank.set(state, { res, rej });
+  shell.openExternal(url);
+  setTimeout(() => { if (pendingBank.has(state)) { pendingBank.delete(state); rej(new Error('Connexion bancaire : délai dépassé (15 min)')); } }, 15 * 60e3);
+}));
+ipcMain.handle('bank:code', (_e, state, code) => { const p = pendingBank.get(state); if (!p) return false; pendingBank.delete(state); p.res(code); return true; });
+ipcMain.handle('bank:cancel', () => { for (const [k, p] of pendingBank) { p.rej(new Error('Connexion annulée')); pendingBank.delete(k); } });
 
 /* ---------- Réglages de l'app PC ---------- */
 const appState = () => ({ prefs: { ...P, bounds: undefined }, openAtLogin: autostart(), version: app.getVersion(), hotkey: 'Ctrl+Alt+V', documents: app.getPath('documents') });

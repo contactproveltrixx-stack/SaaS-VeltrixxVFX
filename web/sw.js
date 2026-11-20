@@ -1,5 +1,5 @@
-// Croisette — fonctionnement hors ligne sur téléphone
-const CACHE = 'croisette-v1';
+// SaaS Veltrixx — fonctionnement hors ligne sur téléphone
+const CACHE = 'saas-veltrixx-v2';
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png']))); });
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {

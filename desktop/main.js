@@ -1,5 +1,8 @@
-// Croisette — application PC (Electron)
-const { app, BrowserWindow, ipcMain, shell, net, session, dialog, Menu, nativeTheme } = require('electron');
+// SaaS Veltrixx — application PC (Electron)
+const { app, BrowserWindow, ipcMain, shell, net, session, dialog, Menu, nativeTheme, Tray, globalShortcut, nativeImage, screen, Notification } = require('electron');
+const path_ = require('path');
+// Le nom affiché change, mais les données restent dans le même dossier qu'avant (sinon tout repartirait de zéro)
+app.setPath('userData', path_.join(app.getPath('appData'), 'Croisette'));
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -9,11 +12,37 @@ const PORT = 47321;
 const BUNDLED = path.join(__dirname, 'app');
 const UPDATED = () => path.join(app.getPath('userData'), 'web');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
-let win = null, port = PORT;
+let win = null, port = PORT, tray = null, quitting = false;
+/* ---------- Options de l'app PC (fichier app-prefs.json dans le dossier de l'app) ---------- */
+const PREF_DEF = { tray: true, startHidden: true, hotkey: true, zoom: 1, onTop: false, pdfDir: '', bounds: null, maximized: false, trayTip: false };
+const P = Object.assign({}, PREF_DEF);
+const PREFS_FILE = () => path.join(app.getPath('userData'), 'app-prefs.json');
+const HOTKEY = 'CommandOrControl+Alt+V', AUTOSTART_ARG = '--au-demarrage';
+function loadPrefs() { try { Object.assign(P, JSON.parse(fs.readFileSync(PREFS_FILE(), 'utf8'))); } catch (e) {} }
+function savePrefs() { try { fs.writeFileSync(PREFS_FILE(), JSON.stringify(P, null, 2)); } catch (e) {} }
+const autostart = () => { try { return app.getLoginItemSettings({ args: [AUTOSTART_ARG] }).openAtLogin; } catch (e) { return false; } };
+function showWin() { if (!win) return createWindow(true); if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+function applyTray() {
+  if (P.tray && !tray) {
+    tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'app', 'icons', 'icon-192.png')).resize({ width: 16, height: 16 }));
+    tray.setToolTip('SaaS Veltrixx');
+    tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Ouvrir SaaS Veltrixx', click: showWin }, { type: 'separator' }, { label: 'Quitter', click: () => { quitting = true; app.quit(); } }]));
+    tray.on('click', showWin);
+  } else if (!P.tray && tray) { tray.destroy(); tray = null; }
+}
+function applyHotkey() {
+  try { globalShortcut.unregister(HOTKEY); } catch (e) {}
+  if (P.hotkey) { try { globalShortcut.register(HOTKEY, () => { if (win && win.isVisible() && win.isFocused()) win.hide(); else showWin(); }); } catch (e) {} }
+}
+function applyWindow() { if (!win) return; win.setAlwaysOnTop(!!P.onTop); win.webContents.setZoomFactor(P.zoom || 1); }
+function validBounds(b) {
+  if (!b || !b.width || !b.height) return null;
+  return screen.getAllDisplays().some(d => { const a = d.workArea; return b.x < a.x + a.width - 80 && b.x + b.width > a.x + 80 && b.y >= a.y - 10 && b.y < a.y + a.height - 80; }) ? b : null;
+}
 const pendingOAuth = new Map();
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
-app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+app.on('second-instance', () => showWin());
 
 function readConfig() { try { return JSON.parse(fs.readFileSync(path.join(BUNDLED, 'config.json'), 'utf8')); } catch (e) { return {}; } }
 
@@ -34,7 +63,7 @@ function startServer() {
       const p = pendingOAuth.get(st);
       if (p) { pendingOAuth.delete(st); code ? p.res(code) : p.rej(new Error(err || 'Connexion refusée')); }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(`<!DOCTYPE html><meta charset="utf-8"><title>Croisette</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0E0D0C;color:#F4F2EE;font:16px system-ui"><div style="text-align:center"><div style="font:500 40px/1.1 system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:-.02em"><span style="display:inline-block;width:2px;height:28px;background:#E8603C;margin-right:12px;vertical-align:-2px"></span>Croisette</div><p>${code ? 'Connexion Google réussie. Tu peux fermer cet onglet et revenir dans Croisette.' : 'Connexion annulée.'}</p></div></body>`);
+      res.end(`<!DOCTYPE html><meta charset="utf-8"><title>SaaS Veltrixx</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0A0A0A;color:#EDEDED;font:16px system-ui"><div style="text-align:center"><div style="font:500 40px/1.1 system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:-.02em"><span style="display:inline-block;width:2px;height:28px;background:#2F7BFF;margin-right:12px;vertical-align:-2px"></span>SaaS Veltrixx</div><p>${code ? 'Connexion Google réussie. Tu peux fermer cet onglet et revenir dans Croisette.' : 'Connexion annulée.'}</p></div></body>`);
       if (win) win.focus();
       return;
     }
@@ -57,25 +86,38 @@ async function checkUpdate() {
     const r = await net.fetch(updateUrl.replace(/\/?$/, '/') + 'index.html?t=' + Date.now(), { cache: 'no-store' });
     if (!r.ok) return;
     const html = await r.text();
-    if (!html.includes('id="vault"') || !html.includes('Croisette')) return;
+    if (!html.includes('id="vault"')) return;
     const dir = UPDATED(); fs.mkdirSync(dir, { recursive: true });
     const cur = resolveFile('index.html');
-    if (cur && fs.readFileSync(cur, 'utf8') === html) return;
+    if (cur && fs.readFileSync(cur, 'utf8') === html) return false;
     fs.writeFileSync(path.join(dir, 'index.html'), html);
-  } catch (e) { /* hors ligne */ }
+    return true;
+  } catch (e) { /* hors ligne */ return null; }
 }
 
-function createWindow() {
+function createWindow(visible = true) {
   const isMac = process.platform === 'darwin';
+  const b = validBounds(P.bounds);
   win = new BrowserWindow({
-    width: 1440, height: 920, minWidth: 380, minHeight: 600, show: false,
-    backgroundColor: '#05070d', title: 'Croisette',
+    width: b ? b.width : 1440, height: b ? b.height : 920, ...(b ? { x: b.x, y: b.y } : {}), minWidth: 380, minHeight: 600, show: false,
+    backgroundColor: '#0A0A0A', title: 'SaaS Veltrixx',
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     titleBarOverlay: isMac ? false : { color: '#00000000', symbolColor: '#F4F2EE', height: 44 },
     icon: path.join(__dirname, 'app', 'icons', 'icon-512.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true }
   });
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => { if (P.maximized) win.maximize(); if (visible) win.show(); });
+  win.webContents.on('did-finish-load', applyWindow);
+  const keep = () => { if (!win || win.isMinimized()) return; P.maximized = win.isMaximized(); if (!P.maximized) P.bounds = win.getBounds(); savePrefs(); };
+  win.on('resize', keep); win.on('move', keep);
+  win.on('close', e => {
+    keep();
+    if (P.tray && !quitting) {
+      e.preventDefault(); win.hide();
+      if (!P.trayTip && Notification.isSupported()) { P.trayTip = true; savePrefs(); new Notification({ title: 'SaaS Veltrixx reste ouvert', body: 'Il est en bas à droite, près de l’horloge. Ctrl+Alt+V pour le rouvrir.' }).show(); }
+    }
+  });
+  win.on('closed', () => { win = null; });
   win.loadURL(`http://localhost:${port}/`);
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/accounts\.google\.com\//.test(url)) return { action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, autoHideMenuBar: true } };
@@ -98,6 +140,7 @@ function dropStaleUpdate() {
 
 app.whenReady().then(async () => {
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
+  loadPrefs();
   dropStaleUpdate();
   // L'aperçu du site (onglet Mon site) : autorise l'affichage dans un cadre
   session.defaultSession.webRequest.onHeadersReceived((d, cb) => {
@@ -111,11 +154,15 @@ app.whenReady().then(async () => {
   });
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(['notifications', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen'].includes(perm)));
   await startServer();
-  createWindow();
+  const atLogin = process.argv.includes(AUTOSTART_ARG);
+  createWindow(!(atLogin && P.startHidden && P.tray));
+  applyTray(); applyHotkey();
   checkUpdate();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin' && !P.tray) app.quit(); });
+app.on('before-quit', () => { quitting = true; });
+app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch (e) {} });
 
 /* ---------- Ponts vers l'interface ---------- */
 ipcMain.handle('net:fetch', async (_e, url, opts = {}) => {
@@ -135,7 +182,7 @@ async function renderPDF(html) {
 ipcMain.handle('pdf:render', async (_e, { html }) => ({ base64: (await renderPDF(html)).toString('base64') }));
 ipcMain.handle('pdf:save', async (_e, { html, filename }) => {
   const pdf = await renderPDF(html);
-  const { filePath, canceled } = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), filename.replace(/[\\/:*?"<>|]/g, '-')), filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  const { filePath, canceled } = await dialog.showSaveDialog(win, { defaultPath: path.join(P.pdfDir && fs.existsSync(P.pdfDir) ? P.pdfDir : app.getPath('documents'), filename.replace(/[\\/:*?"<>|]/g, '-')), filters: [{ name: 'PDF', extensions: ['pdf'] }] });
   if (canceled || !filePath) return { saved: false };
   fs.writeFileSync(filePath, pdf);
   shell.showItemInFolder(filePath);
@@ -251,3 +298,22 @@ ipcMain.handle('google:auth', async (_e, { clientId, clientSecret, scope }) => {
   if (win) win.focus();
   return j;
 });
+
+/* ---------- Réglages de l'app PC ---------- */
+const appState = () => ({ prefs: { ...P, bounds: undefined }, openAtLogin: autostart(), version: app.getVersion(), hotkey: 'Ctrl+Alt+V', documents: app.getPath('documents') });
+ipcMain.handle('app:get', () => appState());
+ipcMain.handle('app:set', (_e, patch = {}) => {
+  if ('openAtLogin' in patch) { try { app.setLoginItemSettings({ openAtLogin: !!patch.openAtLogin, args: [AUTOSTART_ARG] }); } catch (e) {} delete patch.openAtLogin; }
+  for (const k of Object.keys(patch)) if (k in PREF_DEF && k !== 'bounds') P[k] = patch[k];
+  if (P.zoom < .7 || P.zoom > 1.6) P.zoom = 1;
+  savePrefs(); applyTray(); applyHotkey(); applyWindow();
+  return appState();
+});
+ipcMain.handle('app:pickDir', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Dossier des factures', defaultPath: P.pdfDir || app.getPath('documents'), properties: ['openDirectory', 'createDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return appState();
+  P.pdfDir = r.filePaths[0]; savePrefs(); return appState();
+});
+ipcMain.handle('app:openDir', (_e, which) => shell.openPath(which === 'pdf' ? (P.pdfDir || app.getPath('documents')) : app.getPath('userData')));
+ipcMain.handle('app:update', async () => ({ ready: await checkUpdate() }));
+ipcMain.handle('app:relaunch', () => { quitting = true; app.relaunch(); app.quit(); });

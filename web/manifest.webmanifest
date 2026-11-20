@@ -1,13 +1,13 @@
 {
-  "name": "Croisette — studio de montage",
-  "short_name": "Croisette",
+  "name": "SaaS Veltrixx",
+  "short_name": "SaaS Veltrixx",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#05070d",
-  "theme_color": "#05070d",
+  "background_color": "#0A0A0A",
+  "theme_color": "#0A0A0A",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },

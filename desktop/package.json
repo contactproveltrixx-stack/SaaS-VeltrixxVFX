@@ -1,10 +1,10 @@
 {
   "name": "croisette",
-  "productName": "Croisette",
-  "version": "1.1.0",
-  "description": "Croisette — studio de montage",
+  "productName": "SaaS Veltrixx",
+  "version": "1.3.0",
+  "description": "SaaS Veltrixx — gestion de VeltrixxVFX",
   "main": "main.js",
-  "author": "Croisette",
+  "author": "VeltrixxVFX",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
@@ -18,8 +18,8 @@
   },
   "build": {
     "appId": "fr.croisette.studio",
-    "productName": "Croisette",
-    "copyright": "Croisette",
+    "productName": "SaaS Veltrixx",
+    "copyright": "VeltrixxVFX",
     "files": [
       "main.js",
       "preload.js",
@@ -38,14 +38,14 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Croisette",
-      "artifactName": "Croisette-Setup.${ext}"
+      "shortcutName": "SaaS Veltrixx",
+      "artifactName": "SaaS-Veltrixx-Setup.${ext}"
     },
     "mac": {
       "target": "dmg",
       "icon": "build/icon.png",
       "category": "public.app-category.productivity",
-      "artifactName": "Croisette.${ext}"
+      "artifactName": "SaaS-Veltrixx.${ext}"
     }
   },
   "dependencies": {
